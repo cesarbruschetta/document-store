@@ -10,12 +10,12 @@ from . import apptesting
 
 def make_services():
     session = apptesting.Session()
-    return services.get_handlers(lambda: session)
+    return services.get_handlers(lambda: session), session
 
 
 class CreateDocumentsBundleTest(unittest.TestCase):
     def setUp(self):
-        self.services = make_services()
+        self.services, self.session = make_services()
         self.command = self.services.get("create_documents_bundle")
 
     def test_command_interface(self):
@@ -42,7 +42,7 @@ class CreateDocumentsBundleTest(unittest.TestCase):
 
 class FetchDocumentsBundleTest(unittest.TestCase):
     def setUp(self):
-        self.services = make_services()
+        self.services, self.session = make_services()
         self.command = self.services.get("fetch_documents_bundle")
 
         datetime_patcher = mock.patch.object(
@@ -103,7 +103,7 @@ class FetchDocumentsBundleTest(unittest.TestCase):
 
 class UpdateDocumentsBundleTest(unittest.TestCase):
     def setUp(self):
-        self.services = make_services()
+        self.services, self.session = make_services()
         self.command = self.services.get("update_documents_bundle_metadata")
 
         datetime_patcher = mock.patch.object(
@@ -178,7 +178,7 @@ class UpdateDocumentsBundleTest(unittest.TestCase):
 
 class AddDocumentToDocumentsBundleTest(unittest.TestCase):
     def setUp(self):
-        self.services = make_services()
+        self.services, self.session = make_services()
         self.command = self.services.get("add_document_to_documents_bundle")
 
     def test_command_interface(self):
@@ -208,7 +208,7 @@ class AddDocumentToDocumentsBundleTest(unittest.TestCase):
 
 class InsertDocumentToDocumentsBundleTest(unittest.TestCase):
     def setUp(self):
-        self.services = make_services()
+        self.services, self.session = make_services()
         self.command = self.services.get("insert_document_to_documents_bundle")
 
     def test_command_interface(self):
@@ -254,7 +254,7 @@ class InsertDocumentToDocumentsBundleTest(unittest.TestCase):
 
 class CreateJournalTest(unittest.TestCase):
     def setUp(self):
-        self.services = make_services()
+        self.services, self.session = make_services()
         self.command = self.services.get("create_journal")
 
     def test_command_interface(self):
@@ -278,3 +278,151 @@ class CreateJournalTest(unittest.TestCase):
     def test_command_raises_exception_if_already_exists(self):
         self.command(id="xpto")
         self.assertRaises(exceptions.AlreadyExists, self.command, id="xpto")
+
+
+class AddIssueToJournalTest(unittest.TestCase):
+    def setUp(self):
+        self.services, self.session = make_services()
+        self.command = self.services.get("add_issue_to_journal")
+        create_journal_command = self.services.get("create_journal")
+        create_journal_command(id="0034-8910-rsp")
+
+    def test_command_interface(self):
+        self.assertIsNotNone(self.command)
+        self.assertTrue(callable(self.command))
+
+    def test_command_calls_add_issue(self):
+        with mock.patch.object(self.session.journals, "fetch") as mock_fetch:
+            JournalStub = mock.Mock(spec=domain.Journal)
+            JournalStub.add_issue = mock.Mock()
+            mock_fetch.return_value = JournalStub
+            self.command(id="0034-8910-rsp", issue="0034-8910-rsp-48-2")
+            JournalStub.add_issue.assert_called_once_with("0034-8910-rsp-48-2")
+
+    def test_command_update_journals(self):
+        with mock.patch.object(self.session.journals, "fetch") as mock_fetch:
+            JournalStub = mock.Mock(spec=domain.Journal)
+            JournalStub.add_issue = mock.Mock()
+            mock_fetch.return_value = JournalStub
+            with mock.patch.object(self.session.journals, "update") as mock_update:
+                self.command(id="0034-8910-rsp", issue="0034-8910-rsp-48-2")
+                mock_update.assert_called_once_with(JournalStub)
+
+    def test_command_success(self):
+        self.assertIsNone(self.command(id="0034-8910-rsp", issue="0034-8910-rsp-48-2"))
+
+    def test_command_raises_exception_if_journal_does_not_exist(self):
+        self.assertRaises(
+            exceptions.DoesNotExist,
+            self.command,
+            id="0101-8910-csp",
+            issue="0101-8910-csp-48-2",
+        )
+
+    def test_command_raises_exception_if_issue_already_exists(self):
+        self.command(id="0034-8910-rsp", issue="0034-8910-rsp-48-2")
+        self.assertRaises(
+            exceptions.AlreadyExists,
+            self.command,
+            id="0034-8910-rsp",
+            issue="0034-8910-rsp-48-2",
+        )
+
+    def test_command_notify_event(self):
+        with mock.patch.object(self.session.journals, "fetch") as mock_fetch:
+            JournalStub = mock.Mock(spec=domain.Journal)
+            JournalStub.insert_issue = mock.Mock()
+            mock_fetch.return_value = JournalStub
+            with mock.patch.object(self.session, "notify") as mock_notify:
+                self.command(id="0034-8910-rsp", issue="0034-8910-rsp-48-2")
+                mock_notify.assert_called_once_with(
+                    services.Events.ISSUE_ADDED_TO_JOURNAL,
+                    {
+                        "journal": JournalStub,
+                        "id": "0034-8910-rsp",
+                        "issue": "0034-8910-rsp-48-2",
+                    },
+                )
+
+
+class InsertIssueToJournalTest(unittest.TestCase):
+    def setUp(self):
+        self.services, self.session = make_services()
+        self.command = self.services.get("insert_issue_to_journal")
+        create_journal_command = self.services.get("create_journal")
+        create_journal_command(id="0034-8910-rsp")
+
+    def test_command_interface(self):
+        self.assertIsNotNone(self.command)
+        self.assertTrue(callable(self.command))
+
+    def test_command_raises_exception_if_journal_does_not_exist(self):
+        self.assertRaises(
+            exceptions.DoesNotExist,
+            self.command,
+            id="0101-8910-csp",
+            index=0,
+            issue="0101-8910-csp-48-2",
+        )
+
+    def test_command_calls_insert_issue(self):
+        with mock.patch.object(self.session.journals, "fetch") as mock_fetch:
+            JournalStub = mock.Mock(spec=domain.Journal)
+            JournalStub.insert_issue = mock.Mock()
+            mock_fetch.return_value = JournalStub
+            self.command(id="0034-8910-rsp", index=0, issue="0034-8910-rsp-48-2")
+            JournalStub.insert_issue.assert_called_once_with(0, "0034-8910-rsp-48-2")
+
+    def test_command_update_journals(self):
+        with mock.patch.object(self.session.journals, "fetch") as mock_fetch:
+            JournalStub = mock.Mock(spec=domain.Journal)
+            JournalStub.insert_issue = mock.Mock()
+            mock_fetch.return_value = JournalStub
+            with mock.patch.object(self.session.journals, "update") as mock_update:
+                self.command(id="0034-8910-rsp", index=0, issue="0034-8910-rsp-48-2")
+                mock_update.assert_called_once_with(JournalStub)
+
+    def test_command_success(self):
+        self.assertIsNone(
+            self.command(id="0034-8910-rsp", index=0, issue="0034-8910-rsp-48-2")
+        )
+        self.assertIsNone(
+            self.command(id="0034-8910-rsp", index=10, issue="0034-8910-rsp-48-3")
+        )
+        self.assertIsNone(
+            self.command(id="0034-8910-rsp", index=-1, issue="0034-8910-rsp-48-4")
+        )
+
+    def test_command_raises_exception_if_issue_already_exists(self):
+        self.command(id="0034-8910-rsp", index=0, issue="0034-8910-rsp-48-2")
+        self.assertRaises(
+            exceptions.AlreadyExists,
+            self.command,
+            id="0034-8910-rsp",
+            index=0,
+            issue="0034-8910-rsp-48-2",
+        )
+        self.assertRaises(
+            exceptions.AlreadyExists,
+            self.command,
+            id="0034-8910-rsp",
+            index=5,
+            issue="0034-8910-rsp-48-2",
+        )
+
+    def test_command_notify_event(self):
+        with mock.patch.object(self.session.journals, "fetch") as mock_fetch:
+            JournalStub = mock.Mock(spec=domain.Journal)
+            JournalStub.insert_issue = mock.Mock()
+            mock_fetch.return_value = JournalStub
+            with mock.patch.object(self.session, "notify") as mock_notify:
+                self.command(id="0034-8910-rsp", index=0, issue="0034-8910-rsp-48-2")
+                mock_notify.assert_called_once_with(
+                    services.Events.ISSUE_INSERTED_TO_JOURNAL,
+                    {
+                        "journal": JournalStub,
+                        "id": "0034-8910-rsp",
+                        "index": 0,
+                        "issue": "0034-8910-rsp-48-2",
+                    },
+                )
