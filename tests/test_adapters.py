@@ -8,9 +8,9 @@ from . import apptesting
 class StoreTestMixin:
     def setUp(self):
         self.DBCollectionMock = Mock()
-        self.DBCollectionMock.insert_one = Mock()
-        self.DBCollectionMock.find_one = Mock()
-        self.DBCollectionMock.replace_one = Mock()
+        self.DBCollectionMock.add = Mock()
+        self.DBCollectionMock.fetch = Mock()
+        self.DBCollectionMock.update = Mock()
 
     def test_add(self):
         store = self.Adapter(self.DBCollectionMock)
@@ -18,41 +18,39 @@ class StoreTestMixin:
         store.add(data)
         expected = data.manifest
         expected["_id"] = "0034-8910-rsp-48-2"
-        self.DBCollectionMock.insert_one.assert_called_once_with(expected)
+        self.DBCollectionMock.add.assert_called_once_with(expected)
 
     def test_add_data_with_divergent_ids(self):
         store = self.Adapter(self.DBCollectionMock)
         data = self.DomainClass(manifest={"_id": "1", "id": "0034-8910-rsp-48-2"})
         store.add(data)
         expected = data.manifest
-        self.DBCollectionMock.insert_one.assert_called_once_with(expected)
+        self.DBCollectionMock.add.assert_called_once_with(expected)
 
     def test_add_raises_exception_if_already_exists(self):
         import pymongo
 
-        self.DBCollectionMock.insert_one.side_effect = pymongo.errors.DuplicateKeyError(
-            ""
-        )
+        self.DBCollectionMock.add.side_effect = exceptions.AlreadyExists("")
         store = self.Adapter(self.DBCollectionMock)
         data = self.DomainClass(id="0034-8910-rsp-48-2")
         self.assertRaises(exceptions.AlreadyExists, store.add, data)
 
     def test_fetch_raises_exception_if_does_not_exist(self):
-        self.DBCollectionMock.find_one.return_value = None
+        self.DBCollectionMock.fetch.side_effect = exceptions.DoesNotExist("")
         store = self.Adapter(self.DBCollectionMock)
         self.assertRaises(exceptions.DoesNotExist, store.fetch, "0034-8910-rsp-48-2")
 
     def test_fetch(self):
-        self.DBCollectionMock.find_one.return_value = {"_id": "0034-8910-rsp-48-2"}
+        self.DBCollectionMock.fetch.return_value = {"_id": "0034-8910-rsp-48-2"}
         store = self.Adapter(self.DBCollectionMock)
         store.fetch("0034-8910-rsp-48-2")
-        self.DBCollectionMock.find_one.assert_called_once_with(
+        self.DBCollectionMock.fetch.assert_called_once_with(
             {"_id": "0034-8910-rsp-48-2"}
         )
 
     def test_fetch_returns_domain_instance(self):
         manifest = {"_id": "0034-8910-rsp-48-2", "id": "0034-8910-rsp-48-2"}
-        self.DBCollectionMock.find_one.return_value = manifest
+        self.DBCollectionMock.fetch.return_value = manifest
         store = self.Adapter(self.DBCollectionMock)
         data = store.fetch("0034-8910-rsp-48-2")
         # XXX: Teste incompleto, pois não testa o retorno de forma precisa
@@ -65,12 +63,12 @@ class StoreTestMixin:
         store.update(data)
         expected = data.manifest
         expected["_id"] = "0034-8910-rsp-48-2"
-        self.DBCollectionMock.replace_one.assert_called_once_with(
+        self.DBCollectionMock.update.assert_called_once_with(
             {"_id": "0034-8910-rsp-48-2"}, expected
         )
 
     def test_update_raises_exception_if_does_not_exist(self):
-        self.DBCollectionMock.replace_one.return_value = Mock(matched_count=0)
+        self.DBCollectionMock.update.side_effect = exceptions.DoesNotExist("")
         store = self.Adapter(self.DBCollectionMock)
         data = self.DomainClass(id="0034-8910-rsp-48-2")
         self.assertRaises(exceptions.DoesNotExist, store.update, data)
@@ -79,7 +77,7 @@ class StoreTestMixin:
         store = self.Adapter(self.DBCollectionMock)
         data = self.DomainClass(manifest={"_id": "1", "id": "0034-8910-rsp-48-2"})
         store.update(data)
-        self.DBCollectionMock.replace_one.assert_called_once_with(
+        self.DBCollectionMock.update.assert_called_once_with(
             {"_id": "1"}, data.manifest
         )
 

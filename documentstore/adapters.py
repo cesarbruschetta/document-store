@@ -16,6 +16,30 @@ class MongoDB:
     def collection(self, colname):
         return self.db()[colname]
 
+    def add(self, data) -> None:
+        try:
+            self._collection.insert_one(data)
+        except pymongo.errors.DuplicateKeyError:
+            raise exceptions.AlreadyExists(
+                "cannot add data with id " '"%s": the id is already in use' % data.id()
+            ) from None
+
+    def update(self, data) -> None:
+        result = self._collection.replace_one({"_id": data["_id"]}, _data)
+        if result.matched_count == 0:
+            raise exceptions.DoesNotExist(
+                "cannot update data with id " '"%s": data does not exist' % data.id()
+            )
+
+    def fetch(self, id: str):
+        data = self._collection.find_one({"_id": id})
+        if data:
+            return data
+        else:
+            raise exceptions.DoesNotExist(
+                "cannot fetch data with id " '"%s": data does not exist' % id
+            )
+
 
 class Session(interfaces.Session):
     def __init__(self, mongodb_client):
@@ -48,31 +72,19 @@ class BaseStore(interfaces.DataStore):
         _manifest = data.manifest
         if not _manifest.get("_id"):
             _manifest["_id"] = data.id()
-        try:
-            self._collection.insert_one(_manifest)
-        except pymongo.errors.DuplicateKeyError:
-            raise exceptions.AlreadyExists(
-                "cannot add data with id " '"%s": the id is already in use' % data.id()
-            ) from None
+
+        self._collection.add(_manifest)
 
     def update(self, data) -> None:
         _manifest = data.manifest
         if not _manifest.get("_id"):
             _manifest["_id"] = data.id()
-        result = self._collection.replace_one({"_id": _manifest["_id"]}, _manifest)
-        if result.matched_count == 0:
-            raise exceptions.DoesNotExist(
-                "cannot update data with id " '"%s": data does not exist' % data.id()
-            )
+
+        self._collection.update({"_id": _manifest["_id"]}, _manifest)
 
     def fetch(self, id: str):
-        manifest = self._collection.find_one({"_id": id})
-        if manifest:
-            return self.DomainClass(manifest=manifest)
-        else:
-            raise exceptions.DoesNotExist(
-                "cannot fetch data with id " '"%s": data does not exist' % id
-            )
+        manifest = self._collection.fetch({"_id": id})
+        return self.DomainClass(manifest=manifest)
 
 
 class ChangesStore(interfaces.ChangesDataStore):
