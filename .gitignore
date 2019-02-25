@@ -4,7 +4,7 @@
 *.so
 
 # Packages
-*.egg
+*.eggs/*
 *.egg-info
 dist
 build
@@ -40,3 +40,5 @@ nosetests.xml
 
 # Local app
 datadir
+*/.DS_Store
+.DS_Store
